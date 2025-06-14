@@ -1,9 +1,10 @@
 package com.springboot.oauthjwt.config;
 
 import com.springboot.oauthjwt.jwt.JWTFilter;
-import com.springboot.oauthjwt.jwt.JWTUtil;
-import com.springboot.oauthjwt.oauth2.CustomSuccessHandler;
-import com.springboot.oauthjwt.service.CustomOAuth2UserService;
+import com.springboot.oauthjwt.jwt.JwtTokenProvider;
+import com.springboot.oauthjwt.jwt.JwtTokenProvider;
+import com.springboot.oauthjwt.oauth2.AuthCallbackHandler;
+import com.springboot.oauthjwt.service.OAuth2MemberService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,19 +23,49 @@ import java.util.Collections;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private final CustomOAuth2UserService customOAuth2UserService;
-    private final CustomSuccessHandler customSuccessHandler;
-    private final JWTUtil jwtUtil;
+    private final OAuth2MemberService oAuth2MemberService;
+    private final AuthCallbackHandler authCallbackHandler;
+    private final JwtTokenProvider jwtTokenProvider;
 
-    public SecurityConfig(CustomOAuth2UserService customOAuth2UserService, CustomSuccessHandler customSuccessHandler, JWTUtil jwtUtil) {
+    public SecurityConfig(OAuth2MemberService oAuth2MemberService, AuthCallbackHandler authCallbackHandler, JwtTokenProvider jwtTokenProvider) {
 
-        this.customOAuth2UserService = customOAuth2UserService;
-        this.customSuccessHandler = customSuccessHandler;
-        this.jwtUtil = jwtUtil;
+        this.oAuth2MemberService = oAuth2MemberService;
+        this.authCallbackHandler = authCallbackHandler;
+        this.jwtTokenProvider = jwtTokenProvider;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+
+        http
+                .csrf((auth) -> auth.disable());
+
+
+        http
+                .addFilterBefore(new JWTFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class);
+
+        http
+                .oauth2Login((oauth2) -> oauth2
+                        .userInfoEndpoint((userInfoEndpointConfig) -> userInfoEndpointConfig
+                                .userService(oAuth2MemberService))
+                        .successHandler(authCallbackHandler)
+                );
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/").permitAll()
+                        .anyRequest().authenticated());
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http
                 .cors(corsCustomizer -> corsCustomizer.configurationSource(new CorsConfigurationSource() {
@@ -56,41 +87,6 @@ public class SecurityConfig {
                         return configuration;
                     }
                 }));
-
-        //csrf disable
-        http
-                .csrf((auth) -> auth.disable());
-
-        //From 로그인 방식 disable
-        http
-                .formLogin((auth) -> auth.disable());
-
-        //HTTP Basic 인증 방식 disable
-        http
-                .httpBasic((auth) -> auth.disable());
-
-        //JWTFilter 추가
-        http
-                .addFilterBefore(new JWTFilter(jwtUtil), UsernamePasswordAuthenticationFilter.class);
-
-        //oauth2
-        http
-                .oauth2Login((oauth2) -> oauth2
-                        .userInfoEndpoint((userInfoEndpointConfig) -> userInfoEndpointConfig
-                                .userService(customOAuth2UserService))
-                        .successHandler(customSuccessHandler)
-                );
-
-        //경로별 인가 작업
-        http
-                .authorizeHttpRequests((auth) -> auth
-                        .requestMatchers("/").permitAll()
-                        .anyRequest().authenticated());
-
-        //세션 설정 : STATELESS
-        http
-                .sessionManagement((session) -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         return http.build();
     }
